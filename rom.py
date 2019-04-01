@@ -243,7 +243,16 @@ class RomHandler:
             raise NotImplementedError(f"Function convert_to_pc_address() called with not implemented type {self._type}")
 
         if pc_address > self._rom_size:
-            raise AssertionError(f"Function convert_to_pc_address() called on {hex(addr)}, and this maps to {hex(pc_address)}, but the ROM is only {hex(self._rom_size)} bytes large.")
+            #the rom is not large enough to actually contain the indexed address, so we need to consider mirrored addresses 
+            if self._type == RomType.LOROM or self._type == RomType.EXLOROM:
+                masked_addr = addr & 0x7FFFFF
+            else:
+                masked_addr = addr & 0x3FFFFF
+
+            most_significant_bit = masked_addr.bit_length() - 1
+            new_addr = addr - (1 << most_significant_bit)
+            pc_address = self.convert_to_pc_address(new_addr)    #recurse to get the corrected address
+        
         return pc_address
 
 
@@ -334,7 +343,7 @@ class RomHandler:
 
         
 def main():
-	print(f"Called main() on utility library {__file__}")
+    print(f"Called main() on utility library {__file__}")
 
 
 if __name__ == "__main__":
