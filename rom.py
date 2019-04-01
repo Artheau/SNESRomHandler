@@ -21,21 +21,21 @@ class RomType(enum.Enum):
 class RomHandler:
     def __init__(self, filename):
         #figure out if it has a header by inferring from the overall file size
-        HEADER_SIZE = 0x200
+        self._HEADER_SIZE = 0x200
         file_size = os.path.getsize(filename)
         if file_size % 0x8000 == 0:
             self._rom_is_headered = False
             self._rom_size = file_size
-        elif file_size % 0x8000 == HEADER_SIZE:
+        elif file_size % 0x8000 == self._HEADER_SIZE:
             self._rom_is_headered = True
-            self._rom_size = file_size - HEADER_SIZE
+            self._rom_size = file_size - self._HEADER_SIZE
         else:
             raise AssertionError(f"{filename} does not contain an even number of half banks...is this a valid ROM?")
 
         #open the file and store the contents
         with open(filename, "rb") as file:
             if self._rom_is_headered:
-                self._header = bytearray(file.read(HEADER_SIZE))
+                self._header = bytearray(file.read(self._HEADER_SIZE))
             self._contents = bytearray(file.read())
             
         #Determine the type of ROM (e.g. LoRom or HiRom)
@@ -268,6 +268,20 @@ class RomHandler:
         self._contents.extend([0]*pad_byte_amount)  #actually extend the ROM by padding with zeros
 
 
+    def type(self):
+    	#to see if the rom is lorom, hirom, etc.
+    	return self._type.name
+
+
+    def add_header(self):
+    	self._rom_is_headered = True
+    	self._header = bytearray([0]*self._HEADER_SIZE)
+
+
+    def remove_header(self):
+    	self._rom_is_headered = False
+
+
     def _read_single(self, addr, size):
         extracted_bytes = self._contents[addr:addr+size]
 
@@ -316,11 +330,12 @@ class RomHandler:
         elif self._type == RomType.HIROM or self._type == RomType.EXHIROM:
             return self.write(offset+0xFFC0,value,size)
         else:
-            raise AssertionError(f"_read_from_internal_header() called with unknown rom type")
+            raise AssertionError(f"_write_to_internal_header() called with unknown rom type")
 
         
 def main():
-    print(f"Called main() on utility library {__file__}")
+	print(f"Called main() on utility library {__file__}")
+
 
 if __name__ == "__main__":
     main()
