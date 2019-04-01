@@ -9,9 +9,6 @@ import struct
 import os
 import enum
 
-HEADER_SIZE = 0x200
-BANK_SIZE = 0x8000
-
 #enumeration for the rom types
 class RomType(enum.Enum):
     #using the least significant bits of the internal header here
@@ -24,15 +21,16 @@ class RomType(enum.Enum):
 class RomHandler:
     def __init__(self, filename):
         #figure out if it has a header by inferring from the overall file size
-        filesize = os.path.getsize(filename)
-        if filesize % BANK_SIZE == 0:
+        HEADER_SIZE = 0x200
+        file_size = os.path.getsize(filename)
+        if file_size % 0x8000 == 0:
             self._rom_is_headered = False
-            self._romsize = filesize
-        elif filesize % BANK_SIZE == HEADER_SIZE:
+            self._rom_size = file_size
+        elif file_size % 0x8000 == HEADER_SIZE:
             self._rom_is_headered = True
-            self._romsize = filesize - HEADER_SIZE
+            self._rom_size = file_size - HEADER_SIZE
         else:
-            raise AssertionError(f"{filename} does not contain an even number of banks...is this a valid ROM?")
+            raise AssertionError(f"{filename} does not contain an even number of half banks...is this a valid ROM?")
 
         #open the file and store the contents
         with open(filename, "rb") as file:
@@ -155,7 +153,7 @@ class RomHandler:
 
     def convert_to_snes_address(self, addr):
         #takes as input a PC ROM address and converts it into the address space of the SNES
-        if addr > self._romsize or addr < 0:
+        if addr > self._rom_size or addr < 0:
             raise AssertionError(f"Function convert_to_snes_address() called on {hex(addr)}, but this is outside the ROM file.")
         
         if self._type == RomType.LOROM:
@@ -244,7 +242,30 @@ class RomHandler:
         else:
             raise NotImplementedError(f"Function convert_to_pc_address() called with not implemented type {self._type}")
 
+        if pc_address > self._rom_size:
+            raise AssertionError(f"Function convert_to_pc_address() called on {hex(addr)}, and this maps to {hex(pc_address)}, but the ROM is only {hex(self._rom_size)} bytes large.")
         return pc_address
+
+
+    def equivalent_addresses(self, addr1, addr2):
+        #see if two addresses map to the same point in PC ROM
+        return self.convert_to_pc_address(addr1) == self.convert_to_pc_address(addr2)
+
+
+    def expand(self,size):
+        #expands the ROM upwards in size to the specified number of MBits.
+        #In this implementation, does not work to expand ROMs any higher than 32 MBits.
+        if size < 4 or size > 32 or size % 4 != 0:
+            raise NotImplementedError(f"Not Implemented to expand ROM to {size} MBits.  Must be a multiple of 4 between 4 and 32.")
+        current_size = self._rom_size/0x20000
+        if size <= current_size:
+            raise AssertionError(f"Received request to expand() to size {size} MBits, but the ROM is already {self._rom_size/0x20000} MBits")
+
+        size_code = 0x07 + (size-1).bit_length()   #this is a code for the internal header which specifies the approximate ROM size.
+        self._write_to_internal_header(0x17, size_code, 1)
+
+        pad_byte_amount = size*0x20000-self._rom_size
+        self._contents.extend([0]*pad_byte_amount)  #actually extend the ROM by padding with zeros
 
 
     def _read_single(self, addr, size):
@@ -287,6 +308,16 @@ class RomHandler:
             return self.read(offset+0xFFC0,size)
         else:
             raise AssertionError(f"_read_from_internal_header() called with unknown rom type")
+
+
+    def _write_to_internal_header(self, offset, value, size):
+        if self._type == RomType.LOROM or self._type == RomType.EXLOROM:
+            return self.write(offset+0x7FC0,value,size)
+        elif self._type == RomType.HIROM or self._type == RomType.EXHIROM:
+            return self.write(offset+0xFFC0,value,size)
+        else:
+            raise AssertionError(f"_read_from_internal_header() called with unknown rom type")
+
         
 def main():
     print(f"Called main() on utility library {__file__}")
