@@ -20,8 +20,11 @@ class RomType(enum.Enum):
 
 class RomHandler:
     def __init__(self, filename):
-        #figure out if it has a header by inferring from the overall file size
+        #internal constants
         self._HEADER_SIZE = 0x200
+        self._MEGABIT = 0x20000
+
+        #figure out if it has a header by inferring from the overall file size
         file_size = os.path.getsize(filename)
         if file_size % 0x8000 == 0:
             self._rom_is_headered = False
@@ -43,7 +46,7 @@ class RomHandler:
         LOWER_ASCII = 0x20
         UPPER_ASCII = 0x7E
         ROM_TITLE_SIZE = 21
-        if self._rom_size > 32*0x20000: #larger than 32 MBit
+        if self._rom_size > 32*self._MEGABIT: #larger than 32 MBit
             EXLOROM_CHECKSUM_OFFSET = 0x407FDE
             EXHIROM_CHECKSUM_OFFSET = 0x40FFDE
             if self.read(EXLOROM_CHECKSUM_OFFSET, 2) + self.read(EXLOROM_CHECKSUM_OFFSET-2, 2) == 0xFFFF:
@@ -72,25 +75,20 @@ class RomHandler:
                 else:
                     self._type = RomType.HIROM
 
-        #check to make sure the makeup byte confirms our determination of the ROM type, also check for ExHiRom and friends
+        #check to make sure the makeup byte confirms our determination of the ROM type
         makeup_byte = self._read_from_internal_header(0x15, 1)
-        if self._type == RomType.LOROM:
-            if makeup_byte not in [0x20,0x30]:   #0x20 and 0x30 are lorom
-                if makeup_byte == 0x32:
-                    self._type = RomType.EXLOROM
-                elif makeup_byte == 0x23:
-                    pass   #Maybe SA-1 will work with this library.  MAYBE.
-                else:
-                    raise AssertionError(f"Cannot recognize the makeup byte of this ROM: {hex(makeup_byte)}.")
-
-        elif self._type == RomType.HIROM:
-            if makeup_byte not in [0x21, 0x31]:   #0x21 and 0x31 are hirom
-                if makeup_byte == 0x35:
-                    self._type = RomType.EXHIROM
-                elif makeup_byte == 0x23:
-                    pass   #Maybe SA-1 will work with this library.  MAYBE.  Maybe.  maybe.  Emphasis on "maybe".
-                else:
-                    raise AssertionError(f"Cannot recognize the makeup byte of this ROM: {hex(makeup_byte)}.")
+        if self._type == RomType.LOROM and makeup_byte in [0x20,0x30]:
+            pass    #lorom confirmed
+        elif self._type == RomType.HIROM and makeup_byte in [0x21, 0x31]:
+            pass    #hirom confirmed 
+        elif (self._type == RomType.LOROM or self._type == RomType.HIROM) and makeup_byte == 0x23:
+            pass    #Maybe SA-1 will work with this library.  MAYBE.
+        elif self._type == RomType.EXLOROM and makeup_byte == 0x32:
+            pass    #exlorom confirmed
+        elif self._type == RomType.EXHIROM and makeup_byte == 0x35:
+            pass    #exhirom confirmed
+        else:
+            raise AssertionError(f"Cannot recognize the makeup byte of this ROM: {hex(makeup_byte)}.")
 
         #information about onboard RAM/SRAM and enhancement chips lives here
         #rom_type_byte = self._read_from_internal_header(0x16, 1)
@@ -286,17 +284,17 @@ class RomHandler:
         #In this implementation, does not work to expand ROMs any higher than 32 MBits.
         if size < 4 or size > 32 or size % 4 != 0:
             raise NotImplementedError(f"Not Implemented to expand ROM to {size} MBits.  Must be a multiple of 4 between 4 and 32.")
-        current_size = self._rom_size/0x20000
+        current_size = self._rom_size/self._MEGABIT
         if size <= current_size:
-            raise AssertionError(f"Received request to expand() to size {size} MBits, but the ROM is already {self._rom_size/0x20000} MBits")
+            raise AssertionError(f"Received request to expand() to size {size} MBits, but the ROM is already {self._rom_size/self._MEGABIT} MBits")
 
         size_code = 0x07 + (size-1).bit_length()   #this is a code for the internal header which specifies the approximate ROM size.
         self._write_to_internal_header(0x17, size_code, 1)
 
-        pad_byte_amount = size*0x20000-self._rom_size
+        pad_byte_amount = size*self._MEGABIT-self._rom_size
         self._contents.extend([0]*pad_byte_amount)  #actually extend the ROM by padding with zeros
 
-        self._rom_size = size*0x20000
+        self._rom_size = size*self._MEGABIT
 
 
     def type(self):
@@ -351,29 +349,11 @@ class RomHandler:
 
 
     def _read_from_internal_header(self, offset, size):
-        if self._type == RomType.LOROM:
-            return self.read(offset+0x7FC0, size)
-        elif self._type == RomType.HIROM:
-            return self.read(offset+0xFFC0, size)
-        elif self._type == RomType.EXLOROM:
-            return self.read(offset+0x407FC0, size)
-        elif self._type == RomType.EXHIROM:
-            return self.read(offset+0x40FFC0, size)
-        else:
-            raise AssertionError(f"_read_from_internal_header() called with unknown rom type")
+        return self.read_from_snes_address(offset + 0xFFC0, size)
 
 
     def _write_to_internal_header(self, offset, value, size):
-        if self._type == RomType.LOROM:
-            return self.write(offset+0x7FC0,value,size)
-        elif self._type == RomType.HIROM:
-            return self.write(offset+0xFFC0,value,size)
-        elif self._type == RomType.EXLOROM:
-            return self.write(offset+0x407FC0,value,size)
-        elif self._type == RomType.EXHIROM:
-            return self.write(offset+0x40FFC0, value, size)
-        else:
-            raise AssertionError(f"_write_to_internal_header() called with unknown rom type")
+        return self.write_to_snes_address(offset+0xFFC0, value, size)
 
 
     def _fix_checksum(self):
@@ -384,21 +364,19 @@ class RomHandler:
 
     def _get_checksum(self):
         #collected from a hodgepodge of data around the internet.  Hopefully all are correct.
-        mbit_size = self._rom_size//0x20000
-
-        MEGABIT = 0x20000
+        mbit_size = self._rom_size//self._MEGABIT
 
         best_power_of_2 = 1 << mbit_size.bit_length()-1
         if best_power_of_2 == mbit_size:   #best case is that the MBits is a power of 2
             checksum = sum(self._contents)
         elif mbit_size == 28:              #special case that doesn't really fit well into the remaining formulas
-            checksum = sum(self._contents) + sum(self._contents[-4*MEGABIT:])
+            checksum = sum(self._contents) + sum(self._contents[-4*self._MEGABIT:])
         else:                              #basic idea: repeat the part that's over a power of 2 until you get to the next multiple of 2
             lower_power_of_2 = 1 << (mbit_size-best_power_of_2).bit_length()-1
             if best_power_of_2 + lower_power_of_2 == mbit_size:
                 multiplier = best_power_of_2 // lower_power_of_2
-                checksum = sum(self._contents[:best_power_of_2*MEGABIT]) + \
-                                    multiplier*sum(self._contents[best_power_of_2*MEGABIT:])
+                checksum = sum(self._contents[:best_power_of_2*self._MEGABIT]) + \
+                                    multiplier*sum(self._contents[best_power_of_2*self._MEGABIT:])
             else: #some strange MBit size maybe
                 raise AssertionError(f"Unable to process checksum for ROM of size {mbit_size} MBits")
 
