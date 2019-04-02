@@ -39,23 +39,38 @@ class RomHandler:
             self._contents = bytearray(file.read())
             
         #Determine the type of ROM (e.g. LoRom or HiRom)
-        LOROM_CHECKSUM_OFFSET = 0x7FDE
-        HIROM_CHECKSUM_OFFSET = 0xFFDE
         #by comparing against checksum complement
-        if self.read(LOROM_CHECKSUM_OFFSET, 2) + self.read(LOROM_CHECKSUM_OFFSET-2, 2) == 0xFFFF:
-            self._type = RomType.LOROM
-        elif self.read(HIROM_CHECKSUM_OFFSET, 2) + self.read(HIROM_CHECKSUM_OFFSET-2, 2) == 0xFFFF:
-            self._type = RomType.HIROM
-        else:   #the checksum is bad, so try to infer from the internal header being valid characters or not 
-            LOWER_ASCII = 0x20
-            UPPER_ASCII = 0x7E
-            ROM_TITLE_SIZE = 21
-            lorom_char_count = sum(x >= LOWER_ASCII and x <= UPPER_ASCII for x in self.read(0x7FC0, "1"*ROM_TITLE_SIZE))
-            hirom_char_count = sum(x >= LOWER_ASCII and x <= UPPER_ASCII for x in self.read(0xFFC0, "1"*ROM_TITLE_SIZE))
-            if lorom_char_count >= hirom_char_count:
+        LOWER_ASCII = 0x20
+        UPPER_ASCII = 0x7E
+        ROM_TITLE_SIZE = 21
+        if self._rom_size > 32*0x20000: #larger than 32 MBit
+            EXLOROM_CHECKSUM_OFFSET = 0x407FDE
+            EXHIROM_CHECKSUM_OFFSET = 0x40FFDE
+            if self.read(EXLOROM_CHECKSUM_OFFSET, 2) + self.read(EXLOROM_CHECKSUM_OFFSET-2, 2) == 0xFFFF:
+                self._type = RomType.EXLOROM
+            elif self.read(EXHIROM_CHECKSUM_OFFSET, 2) + self.read(EXHIROM_CHECKSUM_OFFSET-2, 2) == 0xFFFF:
+                self._type = RomType.EXHIROM
+            else:   #the checksum is bad, so try to infer from the internal header being valid characters or not 
+                lorom_char_count = sum(x >= LOWER_ASCII and x <= UPPER_ASCII for x in self.read(0x407FC0, "1"*ROM_TITLE_SIZE))
+                hirom_char_count = sum(x >= LOWER_ASCII and x <= UPPER_ASCII for x in self.read(0x40FFC0, "1"*ROM_TITLE_SIZE))
+                if lorom_char_count >= hirom_char_count:
+                    self._type = RomType.EXLOROM
+                else:
+                    self._type = RomType.EXHIROM
+        else:
+            LOROM_CHECKSUM_OFFSET = 0x7FDE
+            HIROM_CHECKSUM_OFFSET = 0xFFDE
+            if self.read(LOROM_CHECKSUM_OFFSET, 2) + self.read(LOROM_CHECKSUM_OFFSET-2, 2) == 0xFFFF:
                 self._type = RomType.LOROM
-            else:
+            elif self.read(HIROM_CHECKSUM_OFFSET, 2) + self.read(HIROM_CHECKSUM_OFFSET-2, 2) == 0xFFFF:
                 self._type = RomType.HIROM
+            else:   #the checksum is bad, so try to infer from the internal header being valid characters or not 
+                lorom_char_count = sum(x >= LOWER_ASCII and x <= UPPER_ASCII for x in self.read(0x7FC0, "1"*ROM_TITLE_SIZE))
+                hirom_char_count = sum(x >= LOWER_ASCII and x <= UPPER_ASCII for x in self.read(0xFFC0, "1"*ROM_TITLE_SIZE))
+                if lorom_char_count >= hirom_char_count:
+                    self._type = RomType.LOROM
+                else:
+                    self._type = RomType.HIROM
 
         #check to make sure the makeup byte confirms our determination of the ROM type, also check for ExHiRom and friends
         makeup_byte = self._read_from_internal_header(0x15, 1)
@@ -84,10 +99,15 @@ class RomHandler:
         #self._SRAM_size = 0x400 << self._read_from_internal_header(0x18,1)
 
 
-    def save(self, filename, overwrite=False):
+    def save(self, filename, overwrite=False,fix_checksum=True):
         #check to see if a file by this name already exists
         if not overwrite and os.path.isfile(filename):
             raise FileExistsError(f"{filename} already exists")
+
+        # fix checksum
+        if fix_checksum:
+            self._fix_checksum()
+
         with open(filename, "wb") as file:
             if self._rom_is_headered:
                 file.write(self._header)
@@ -276,6 +296,8 @@ class RomHandler:
         pad_byte_amount = size*0x20000-self._rom_size
         self._contents.extend([0]*pad_byte_amount)  #actually extend the ROM by padding with zeros
 
+        self._rom_size = size*0x20000
+
 
     def type(self):
     	#to see if the rom is lorom, hirom, etc.
@@ -292,6 +314,8 @@ class RomHandler:
 
 
     def _read_single(self, addr, size):
+        if addr+size > self._rom_size:
+            raise AssertionError(f"function _read_single() called for address beyond ROM file boundary: : {hex(addr)}, size {size}")
         extracted_bytes = self._contents[addr:addr+size]
 
         if size == 1:
@@ -310,6 +334,8 @@ class RomHandler:
 
 
     def _write_single(self, value, addr, size):
+        if addr+size > self._rom_size:
+            raise AssertionError(f"function _write_single() called for address beyond ROM file boundary: {hex(addr)}, size {size}")
         if size == 1:
             pack_code = 'B'
         elif size == 2:
@@ -325,21 +351,59 @@ class RomHandler:
 
 
     def _read_from_internal_header(self, offset, size):
-        if self._type == RomType.LOROM or self._type == RomType.EXLOROM:
-            return self.read(offset+0x7FC0,size)
-        elif self._type == RomType.HIROM or self._type == RomType.EXHIROM:
-            return self.read(offset+0xFFC0,size)
+        if self._type == RomType.LOROM:
+            return self.read(offset+0x7FC0, size)
+        elif self._type == RomType.HIROM:
+            return self.read(offset+0xFFC0, size)
+        elif self._type == RomType.EXLOROM:
+            return self.read(offset+0x407FC0, size)
+        elif self._type == RomType.EXHIROM:
+            return self.read(offset+0x40FFC0, size)
         else:
             raise AssertionError(f"_read_from_internal_header() called with unknown rom type")
 
 
     def _write_to_internal_header(self, offset, value, size):
-        if self._type == RomType.LOROM or self._type == RomType.EXLOROM:
+        if self._type == RomType.LOROM:
             return self.write(offset+0x7FC0,value,size)
-        elif self._type == RomType.HIROM or self._type == RomType.EXHIROM:
+        elif self._type == RomType.HIROM:
             return self.write(offset+0xFFC0,value,size)
+        elif self._type == RomType.EXLOROM:
+            return self.write(offset+0x407FC0,value,size)
+        elif self._type == RomType.EXHIROM:
+            return self.write(offset+0x40FFC0, value, size)
         else:
             raise AssertionError(f"_write_to_internal_header() called with unknown rom type")
+
+
+    def _fix_checksum(self):
+        #first write zero to the old checksum (for convenience, in case it was broken before)
+        self._write_to_internal_header(0x1C, [0xFFFF,0x0000], "22")
+        checksum = self._get_checksum()
+        self._write_to_internal_header(0x1C, [0xFFFF - checksum,checksum], "22")
+
+    def _get_checksum(self):
+        #collected from a hodgepodge of data around the internet.  Hopefully all are correct.
+        mbit_size = self._rom_size//0x20000
+
+        MEGABIT = 0x20000
+
+        best_power_of_2 = 1 << mbit_size.bit_length()-1
+        if best_power_of_2 == mbit_size:   #best case is that the MBits is a power of 2
+            checksum = sum(self._contents)
+        elif mbit_size == 28:              #special case that doesn't really fit well into the remaining formulas
+            checksum = sum(self._contents) + sum(self._contents[-4*MEGABIT:])
+        else:                              #basic idea: repeat the part that's over a power of 2 until you get to the next multiple of 2
+            lower_power_of_2 = 1 << (mbit_size-best_power_of_2).bit_length()-1
+            if best_power_of_2 + lower_power_of_2 == mbit_size:
+                multiplier = best_power_of_2 // lower_power_of_2
+                checksum = sum(self._contents[:best_power_of_2*MEGABIT]) + \
+                                    multiplier*sum(self._contents[best_power_of_2*MEGABIT:])
+            else: #some strange MBit size maybe
+                raise AssertionError(f"Unable to process checksum for ROM of size {mbit_size} MBits")
+
+        return checksum % 0x10000
+
 
         
 def main():
