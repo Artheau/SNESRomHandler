@@ -1,0 +1,8 @@
+# no pycache
+__pycache__/
+
+# no super nintendo files
+*.smc
+
+# no super famicom files
+*.sfc

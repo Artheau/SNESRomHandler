@@ -322,7 +322,7 @@ class RomHandler:
             unpack_code = 'H'
         elif size == 3:
             unpack_code = 'L'
-            extracted_bytes.append(b'\x00')    #no native 3-byte unpacking format in Python; this is a workaround to pad the 4th byte
+            extracted_bytes.append(0x00)    #no native 3-byte unpacking format in Python; this is a workaround to pad the 4th byte
         elif size == 4:
             unpack_code = 'L'
         else:
