@@ -11,8 +11,7 @@ import enum
 
 #enumeration for the rom types
 class RomType(enum.Enum):
-    #using the least significant bits of the internal header here
-    # for consistency
+    #using the least significant bits of the internal header here for consistency
     LOROM   = 0b000
     HIROM   = 0b001
     EXLOROM = 0b010
@@ -346,6 +345,20 @@ class RomHandler:
             raise NotImplementedError(f"_write_single() called to write size {size}, but this is not implemented.")
 
         self._contents[addr:addr+size] = struct.pack('<'+pack_code,value)[0:size]  #the '<' forces it to write as little-endian
+
+    def _apply_single_fix_to_snes_address(self, snes_address, classic_values, fixed_values, encoding):
+        #checks to see if, indeed, a value is still in the classic (bugged) value, and if so, fixes it
+        #returns True if the fix was affected and False otherwise
+
+        #first make sure the input makes sense -- either all integers or matching length lists
+        if type(encoding) is not int and len(classic_values) != len(fixed_values):
+            raise AssertionError(f"function _apply_single_fix_to_snes_address() called with different length lists:\n{classic_values}\n{fixed_values}")
+
+        if self.read_from_snes_address(snes_address, encoding) == classic_values:
+            self.write_to_snes_address(snes_address, fixed_values, encoding)
+            return True
+        else:
+            return False
 
 
     def _read_from_internal_header(self, offset, size):
