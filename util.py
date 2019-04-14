@@ -19,7 +19,7 @@ def image_from_raw_data(tilemaps, DMA_writes, given_palettes):
     #  a dictionary consisting of writes to the DMA and what should be there
     #  a palette in 555 format
 
-    rgb_palettes = {index: convert_to_rgb(palette) for (index,palette) in given_palettes.items()}
+    rgb_palettes = {index: convert_to_rgb(palette) for (index,palette) in given_palettes.items() if palette}
 
     canvas = {}
 
