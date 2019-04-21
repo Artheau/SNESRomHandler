@@ -135,6 +135,10 @@ class RomHandler:
         else:
             raise AssertionError(f"received call to read() but the encoding was not recognized: {encoding}")
 
+    def bulk_read(self,addr,num_bytes):
+        #for large reads, the read() function is too slow.  This returns the raw byte data.
+        return self._contents[addr:addr+num_bytes].copy()
+
     def write(self,addr,values,encoding):
         #if encoding is an integer:
         #expects a value and an address to write to.  It will convert it to little-endian format automatically.
@@ -164,6 +168,9 @@ class RomHandler:
 
     def read_from_snes_address(self,addr,encoding):
         return self.read(self.convert_to_pc_address(addr),encoding)
+
+    def bulk_read_from_snes_address(self,addr,num_bytes):
+        return self.bulk_read(self.convert_to_pc_address(addr),num_bytes)
 
     def write_to_snes_address(self,addr,values,encoding):
         return self.write(self.convert_to_pc_address(addr),values,encoding)      

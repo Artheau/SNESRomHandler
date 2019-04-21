@@ -1,5 +1,6 @@
 #a collection of functions that are commonly needed for SNES files
 from PIL import Image
+import numpy as np
 
 def get_bit(byteval,idx):
     #https://stackoverflow.com/questions/2591483/getting-a-specific-bit-value-in-a-byte-string
@@ -44,12 +45,13 @@ def image_from_raw_data(tilemaps, DMA_writes, given_palettes):
 
         def draw_tile_to_canvas(new_x_offset, new_y_offset, new_index):
             tile_to_write = convert_tile_from_bitplanes(DMA_writes[new_index])
-            for i in range(8):
-                for j in range(8):
-                    if tile_to_write[i][j] != 0:   #if not transparent
-                        target_coordinate = (new_x_offset + (7-i if h_flip else i),\
-                                             new_y_offset + (7-j if v_flip else j))
-                        canvas[target_coordinate] = rgb_palettes[palette_index][tile_to_write[i][j]]
+            if h_flip:
+               tile_to_write = np.fliplr(tile_to_write)
+            if v_flip:
+               tile_to_write = np.flipud(tile_to_write)
+            for (i,j), value in np.ndenumerate(tile_to_write):
+                if value != 0:   #if not transparent
+                    canvas[(new_x_offset+i,new_y_offset+j)] = rgb_palettes[palette_index][value]
 
         if big_tile:   #draw all four 8x8 tiles
             draw_tile_to_canvas(x_offset+(8 if h_flip else 0),y_offset+(8 if v_flip else 0),index       )
@@ -65,7 +67,7 @@ def image_from_raw_data(tilemaps, DMA_writes, given_palettes):
 
 
 
-def to_image(canvas,zoom=1):
+def to_image(canvas, zoom=1):
 
     if canvas.keys():
         x_min = min([x for (x,y) in canvas.keys()])
@@ -96,8 +98,9 @@ def to_image(canvas,zoom=1):
             pixels[i+origin[0],j+origin[1]] = canvas[(i,j)]
 
         #scale
-        image = image.resize((zoom*(width), zoom*(height)), Image.NEAREST)
-        origin = tuple([int(xi*zoom) for xi in origin])
+        if zoom != 1:
+            image = image.resize((zoom*(width), zoom*(height)), Image.NEAREST)
+            origin = tuple([int(xi*zoom) for xi in origin])
     else:                #the canvas is empty
         image = None
         origin = (0,0)
@@ -105,25 +108,21 @@ def to_image(canvas,zoom=1):
     return image, origin
 
 def convert_tile_from_bitplanes(raw_tile):
-    #this part is always so confusing
-    pixels = [[0 for _ in range(8)] for _ in range(8)]
-    for i in range(8):
-        for j in range(8):
-            for bit in range(2):            #bitplanes 1 and 2
-                index = i*2 + bit
-                amt_to_inc = (get_bit(raw_tile[index],8-j-1)) * (0x01 << bit)
-                pixels[j][i] += amt_to_inc
-            for bit in range(2):            #bitplanes 3 and 4
-                index = i*2 + bit + 2*8
-                amt_to_inc = (get_bit(raw_tile[index],8-j-1)) * (0x01 << (bit+2))
-                pixels[j][i] += amt_to_inc
-          #notes in comments here are from https://mrclick.zophar.net/TilEd/download/consolegfx.txt
-          # [r0, bp1], [r0, bp2], [r1, bp1], [r1, bp2], [r2, bp1], [r2, bp2], [r3, bp1], [r3, bp2]
-          # [r4, bp1], [r4, bp2], [r5, bp1], [r5, bp2], [r6, bp1], [r6, bp2], [r7, bp1], [r7, bp2]
-          # [r0, bp3], [r0, bp4], [r1, bp3], [r1, bp4], [r2, bp3], [r2, bp4], [r3, bp3], [r3, bp4]
-          # [r4, bp3], [r4, bp4], [r5, bp3], [r5, bp4], [r6, bp3], [r6, bp4], [r7, bp3], [r7, bp4]
-    return pixels
+    #an attempt to make this ugly process mildly efficient
 
+    tile = np.zeros((8,8), dtype=np.uint8)
+
+    tile[:,4] = raw_tile[31:15:-2]
+    tile[:,5] = raw_tile[30:14:-2]
+    tile[:,6] = raw_tile[15::-2]
+    tile[:,7] = raw_tile[14::-2]
+
+    shaped_tile = tile.reshape(8,8,1)
+
+    tile_bits = np.unpackbits(shaped_tile, axis=2)
+    fixed_bits = np.packbits(tile_bits, axis=1)
+    return np.fliplr(fixed_bits.reshape(8,8).swapaxes(0,-1))
+    
 def convert_to_rgb(palette):   #expects big endian 2-byte colors in a list
     return [single_convert_to_rgb(color) for color in palette]
 
