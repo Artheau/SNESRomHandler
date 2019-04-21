@@ -14,13 +14,10 @@ def convert_byte_to_signed_int(byte):
     else:
         return byte
 
-def image_from_raw_data(tilemaps, DMA_writes, given_palettes):
+def image_from_raw_data(tilemaps, DMA_writes):
     #expects:
     #  a list of tilemaps in the 5 byte format: essentially [X position, size+Xmsb, Y, index, palette]
     #  a dictionary consisting of writes to the DMA and what should be there
-    #  a palette in 555 format
-
-    rgb_palettes = {index: convert_to_rgb(palette) for (index,palette) in given_palettes.items() if palette}
 
     canvas = {}
 
@@ -41,17 +38,17 @@ def image_from_raw_data(tilemaps, DMA_writes, given_palettes):
         v_flip = get_bit(tilemap[4], 7) == 1
         h_flip = get_bit(tilemap[4], 6) == 1
         priority = get_bit(tilemap[4], 5) == 1              #TODO: implement a priority system
-        palette_index = (tilemap[4] >> 2) & 0b111
+        palette_offset = (tilemap[4] << 2) & 0b1110000      #this is shifted over so that it can be added to the index value to make a (less than) 8-bit value for "P" mode
 
         def draw_tile_to_canvas(new_x_offset, new_y_offset, new_index):
             tile_to_write = convert_tile_from_bitplanes(DMA_writes[new_index])
             if h_flip:
-               tile_to_write = np.fliplr(tile_to_write)
-            if v_flip:
                tile_to_write = np.flipud(tile_to_write)
+            if v_flip:
+               tile_to_write = np.fliplr(tile_to_write)
             for (i,j), value in np.ndenumerate(tile_to_write):
                 if value != 0:   #if not transparent
-                    canvas[(new_x_offset+i,new_y_offset+j)] = rgb_palettes[palette_index][value]
+                    canvas[(new_x_offset+i,new_y_offset+j)] = int(palette_offset + value)
 
         if big_tile:   #draw all four 8x8 tiles
             draw_tile_to_canvas(x_offset+(8 if h_flip else 0),y_offset+(8 if v_flip else 0),index       )
@@ -84,7 +81,7 @@ def to_image(canvas, zoom=1):
         height = y_max-y_min+1
         origin = (-x_min,-y_min)
 
-        image = Image.new("RGBA", (width, height), 0)
+        image = Image.new("P", (width, height), 0)
 
         pixels = image.load()
 
@@ -94,8 +91,8 @@ def to_image(canvas, zoom=1):
         # for j in range(y_min,y_max+1):
         #     pixels[origin[0],j+origin[1]] = (0xFF,0x80,0xFF)
 
-        for (i,j) in canvas.keys():
-            pixels[i+origin[0],j+origin[1]] = canvas[(i,j)]
+        for (i,j),value in canvas.items():
+            pixels[i+origin[0],j+origin[1]] = value
 
         #scale
         if zoom != 1:
@@ -107,9 +104,15 @@ def to_image(canvas, zoom=1):
 
     return image, origin
 
+def apply_palette(image, palette):
+    flat_palette = [x for color in convert_to_rgb(palette) for x in color]
+    image.putpalette(flat_palette)                                          #apply palette
+    image.putalpha(image.convert('L').point(lambda x: 0 if x==0 else 255, '1'))        #make background transparent
+    return image
+            
+
 def convert_tile_from_bitplanes(raw_tile):
     #an attempt to make this ugly process mildly efficient
-
     tile = np.zeros((8,8), dtype=np.uint8)
 
     tile[:,4] = raw_tile[31:15:-2]
