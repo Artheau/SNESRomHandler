@@ -106,8 +106,11 @@ def to_image(canvas, zoom=1):
 
 def apply_palette(image, palette):
     flat_palette = [x for color in convert_to_rgb(palette) for x in color]
+    alpha_mask = image.convert('L').point(lambda x: 0 if x==0 else 255)
     image.putpalette(flat_palette)                                          #apply palette
-    image.putalpha(image.convert('L').point(lambda x: 0 if x==0 else 255, '1'))        #make background transparent
+    image = image.convert('RGBA')     #even thought the Pillow documentation says it does this automatically, it doesn't.
+    image.putalpha(alpha_mask)        #make background transparent
+
     return image
             
 
