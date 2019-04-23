@@ -148,7 +148,7 @@ def convert_indexed_tile_to_bitplanes(indexed_tile):
     return np.append(low_bitplanes, high_bitplanes)
     
 
-def convert_to_rgb(palette):   #expects big endian 2-byte colors in a list
+def convert_to_rgb(palette):   #expects big endian 2-byte colors in a list, returns (r,g,b) tuples
     return [single_convert_to_rgb(color) for color in palette]
 
 def single_convert_to_rgb(color):    #from 555
@@ -156,6 +156,15 @@ def single_convert_to_rgb(color):    #from 555
     green = 8*((color >> 5) & 0b11111)
     blue = 8*((color >> 10) & 0b11111)
     return (red,green,blue)
+
+def convert_to_555(palette):   #expects (r,g,b) tuples in a list, returns big endian 2-byte colors in a list
+    return [single_convert_to_555(color) for color in palette]
+
+def single_convert_to_555(color):  #expects an (r,g,b) tuple, returns a big endian 2-byte value
+    red,green,blue = color
+    return (     ((blue %0xFF)  // 8 )      << 10) + \
+            (    ((green%0xFF)  // 8 )      << 5) + \
+            (    ((red  %0xFF)  // 8 )          )
 
 def pretty_hex(x,digits=2):                 #displays a hex number with a specified number of digits
     return '0x' + hex(x)[2:].zfill(digits)
