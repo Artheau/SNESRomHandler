@@ -166,6 +166,12 @@ class RomHandler:
         else:
             raise AssertionError(f"received call to write() but the encoding was not recognized: {encoding}")
 
+    def bulk_write(self,addr,values,num_bytes):
+        if len(values) != num_bytes:
+            raise AssertionError("call to bulk_write() with data not of length specified")
+        else:
+            self._contents[addr:addr+num_bytes] = bytearray(values)
+
     def read_from_snes_address(self,addr,encoding):
         return self.read(self.convert_to_pc_address(addr),encoding)
 
@@ -173,7 +179,10 @@ class RomHandler:
         return self.bulk_read(self.convert_to_pc_address(addr),num_bytes)
 
     def write_to_snes_address(self,addr,values,encoding):
-        return self.write(self.convert_to_pc_address(addr),values,encoding)      
+        return self.write(self.convert_to_pc_address(addr),values,encoding)
+
+    def bulk_write_to_snes_address(self,addr,values,num_bytes):
+        return self.bulk_write(self.convert_to_pc_address(addr),values,num_bytes)      
 
     def convert_to_snes_address(self, addr):
         #takes as input a PC ROM address and converts it into the address space of the SNES

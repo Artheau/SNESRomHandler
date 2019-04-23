@@ -127,8 +127,27 @@ def convert_tile_from_bitplanes(raw_tile):
 
     tile_bits = np.unpackbits(shaped_tile, axis=2)
     fixed_bits = np.packbits(tile_bits, axis=1)
-    return np.fliplr(fixed_bits.reshape(8,8).swapaxes(0,-1))
+    returnvalue = fixed_bits.reshape(8,8)
+    returnvalue = returnvalue.swapaxes(0,1)
+    returnvalue = np.fliplr(returnvalue)
+    return returnvalue
+
+def convert_indexed_tile_to_bitplanes(indexed_tile):
+    #this should literally just be the inverse of convert_tile_from_bitplanes(), and so it was written in this way
+    #indexed_tile = convert_tile_from_bitplanes([i for i in range(0,64,2)])
+    #indexed_tile = convert_tile_from_bitplanes([0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x7E,0x52,0x7E,0x52,0x7E,0x12,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x2C,0x04,0x2C,0x04,0x7C,0x44])
+    indexed_tile = np.array(indexed_tile,dtype=np.uint8).reshape(8,8)
+    indexed_tile = np.fliplr(indexed_tile)
+    indexed_tile = indexed_tile.swapaxes(0,1)
+    fixed_bits = indexed_tile.reshape(8,1,8)  #in the opposite direction, this had axis=1 collapsed
+    tile_bits = np.unpackbits(fixed_bits,axis=1)
+    shaped_tile = np.packbits(tile_bits,axis=2)
+    tile = shaped_tile.reshape(8,8)
+    low_bitplanes = np.ravel(tile[:,6:8])[::-1]
+    high_bitplanes = np.ravel(tile[:,4:6])[::-1]
+    return np.append(low_bitplanes, high_bitplanes)
     
+
 def convert_to_rgb(palette):   #expects big endian 2-byte colors in a list
     return [single_convert_to_rgb(color) for color in palette]
 
