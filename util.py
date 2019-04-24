@@ -167,7 +167,7 @@ def single_convert_to_555(color):  #expects an (r,g,b) tuple, returns a big endi
             (    ((red  %0xFF)  // 8 )          )
 
 def pretty_hex(x,digits=2):                 #displays a hex number with a specified number of digits
-    return '0x' + hex(x)[2:].zfill(digits)
+    return '0x' + hex(x)[2:].upper().zfill(digits)
 
 def main():
     print(f"Called main() on utility library {__file__}")
