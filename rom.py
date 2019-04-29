@@ -301,7 +301,8 @@ class RomHandler:
             raise NotImplementedError(f"Not Implemented to expand ROM to {size} MBits.  Must be a multiple of 4 between 4 and 32.")
         current_size = self._rom_size/self._MEGABIT
         if size <= current_size:
-            raise AssertionError(f"Received request to expand() to size {size} MBits, but the ROM is already {self._rom_size/self._MEGABIT} MBits")
+            #raise AssertionError(f"Received request to expand() to size {size} MBits, but the ROM is already {self._rom_size/self._MEGABIT} MBits")
+            return None     #For now I am convinced that it is ok to just do nothing in this case instead of throwing an error
 
         size_code = 0x07 + (size-1).bit_length()   #this is a code for the internal header which specifies the approximate ROM size.
         self._write_to_internal_header(0x17, size_code, 1)
