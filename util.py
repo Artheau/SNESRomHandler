@@ -38,7 +38,7 @@ def image_from_raw_data(tilemaps, DMA_writes):
         v_flip = get_bit(tilemap[4], 7) == 1
         h_flip = get_bit(tilemap[4], 6) == 1
         priority = get_bit(tilemap[4], 5) == 1              #TODO: implement a priority system
-        palette_offset = (tilemap[4] << 2) & 0b1110000      #this is shifted over so that it can be added to the index value to make a (less than) 8-bit value for "P" mode
+        palette_offset = (tilemap[4] << 3) & 0b1110000      #this is shifted over so that it can be added to the index value to make a (less than) 8-bit value for "P" mode
 
         def draw_tile_to_canvas(new_x_offset, new_y_offset, new_index):
             tile_to_write = convert_tile_from_bitplanes(DMA_writes[new_index])
